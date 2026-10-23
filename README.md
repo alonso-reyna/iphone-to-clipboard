@@ -46,8 +46,8 @@ A camera icon appears in the menu bar. To keep it there after a restart, turn on
 You only need the Xcode Command Line Tools (`xcode-select --install`).
 
 ```bash
-git clone https://github.com/alonso-reyna/iphone-photo.git
-cd iphone-photo
+git clone https://github.com/alonso-reyna/iphone-to-clipboard.git
+cd iphone-to-clipboard
 ./build.sh
 ```
 
@@ -69,6 +69,8 @@ Captures are kept in `~/Library/Caches/iPhonePhoto` so they can be pasted as fil
 ## Credits
 
 The hidden main menu trick comes from [continuity-capture](https://github.com/techjuicelab/continuity-capture) by techjuicelab, a hotkey-driven Continuity Camera helper. Worth a look if you prefer keyboard shortcuts.
+
+Sample photos in the screenshots are from [Unsplash](https://unsplash.com): [Lake Louise](https://unsplash.com/photos/lake-louise-mountains-and-glacier-lpjb_UMOyx8) by Daniel Roe, [coffee cup](https://unsplash.com/photos/white-ceramic-teacup-with-coffee-beans-lsmu0rUhUOk) by Ante Samarzija, [notebook](https://unsplash.com/photos/black-pen-on-white-notebook-Hx-4TbpsoIw) by Justin Morgan and [seashore](https://unsplash.com/photos/aerial-photo-of-seashore-sLAk1guBG90) by Shifaaz Shamoon.
 
 ## License
 
