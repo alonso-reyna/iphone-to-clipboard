@@ -452,6 +452,11 @@ struct ToastView: View {
 
 // MARK: - Apple-style floating panel (no arrow, glass, shows instantly)
 
+// Draws only the border; clicks pass through to the panel content.
+final class EdgeView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 final class FloatingPanel: NSPanel {
     init() {
         super.init(contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
@@ -601,7 +606,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     // System glass background (Liquid Glass on macOS 26, blur on older versions).
+    // A faint light edge sits on top, like Apple's own menus, so the system's dark outline doesn't show.
     private func glass(around host: NSView, radius: CGFloat) -> NSView {
+        let container = NSView()
+        let background = glassBackground(around: host, radius: radius)
+        let edge = EdgeView()
+        edge.wantsLayer = true
+        edge.layer?.cornerRadius = radius
+        edge.layer?.cornerCurve = .continuous
+        edge.layer?.borderWidth = 1
+        edge.layer?.borderColor = NSColor.white.withAlphaComponent(0.18).cgColor
+        for view in [background, edge] {
+            view.frame = container.bounds
+            view.autoresizingMask = [.width, .height]
+            container.addSubview(view)
+        }
+        return container
+    }
+
+    private func glassBackground(around host: NSView, radius: CGFloat) -> NSView {
         if #available(macOS 26.0, *) {
             let glass = NSGlassEffectView()
             glass.cornerRadius = radius
