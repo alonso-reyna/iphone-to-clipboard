@@ -469,6 +469,30 @@ final class FloatingPanel: NSPanel {
     }
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    // Rounded window shape. Without it macOS draws the shadow and its dark edge
+    // around the full rectangle, which shows as a square frame behind the glass.
+    var cornerRadius: CGFloat = 0 {
+        didSet {
+            let r = cornerRadius
+            let mask = NSImage(size: NSSize(width: 2 * r + 1, height: 2 * r + 1), flipped: false) { rect in
+                NSColor.black.setFill()
+                NSBezierPath(roundedRect: rect, xRadius: r, yRadius: r).fill()
+                return true
+            }
+            mask.capInsets = NSEdgeInsets(top: r, left: r, bottom: r, right: r)
+            mask.resizingMode = .stretch
+            cornerMask = mask
+            invalidateShadow()
+        }
+    }
+    private var cornerMask: NSImage?
+    @objc private var _cornerMask: NSImage? { cornerMask }   // read by AppKit for the window shape
+
+    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        super.setFrame(frameRect, display: flag)
+        invalidateShadow()
+    }
 }
 
 // MARK: - App
@@ -568,9 +592,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         panelHost = NSHostingView(rootView: PanelView(model: model))
         panel.contentView = glass(around: panelHost, radius: 20)
+        panel.cornerRadius = 20
 
         toastHost = NSHostingView(rootView: ToastView(model: toastModel))
         toastPanel.contentView = glass(around: toastHost, radius: 16)
+        toastPanel.cornerRadius = 16
         toastPanel.ignoresMouseEvents = true
     }
 
