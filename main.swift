@@ -54,11 +54,9 @@ final class HiddenWindow: NSWindow {
 
 // MARK: - Panel model
 
-struct DeviceAction { let menuIndex: Int; let title: String }
-
 struct Device: Identifiable {
     let id: String  // device name
-    let actions: [DeviceAction]
+    let actions: [Int]  // index of each action in the hidden submenu
     var isIPad: Bool { id.localizedCaseInsensitiveContains("iPad") }
 }
 
@@ -85,9 +83,13 @@ enum Option: String, CaseIterable {
         case .photo: return "camera"
         case .multi: return "photo.stack"
         case .scan: return "doc.viewfinder"
-        case .sketch: return "pencil.and.scribble"
+        case .sketch: return Option.sketchSymbol
         }
     }
+    // "pencil.and.scribble" only exists from macOS 14; on macOS 13 the icon would be blank.
+    private static let sketchSymbol =
+        NSImage(systemSymbolName: "pencil.and.scribble", accessibilityDescription: nil) != nil
+            ? "pencil.and.scribble" : "scribble"
     var defaultOn: Bool { self != .sketch }
     var key: String { "show.\(rawValue)" }
     // Position of the action inside the device's block (Take Photo, Scan Documents, Add Sketch).
@@ -252,7 +254,7 @@ struct PanelView: View {
                 HStack(alignment: .top, spacing: 4) {
                     ForEach(options, id: \.self) { option in
                         ActionButton(option: option) {
-                            model.run(device.actions[option.actionPosition].menuIndex, option == .multi)
+                            model.run(device.actions[option.actionPosition], option == .multi)
                         }
                     }
                 }
@@ -315,10 +317,7 @@ struct PanelView: View {
     }
 
     private var previewTitle: String {
-        if model.multiSessionActive {
-            return model.thumbs.isEmpty ? "Take the first photo on your iPhone"
-                : "Copied to clipboard: \(model.thumbs.count)"
-        }
+        if model.multiSessionActive && model.thumbs.isEmpty { return "Take the first photo on your iPhone" }
         return "Copied to clipboard: \(model.thumbs.count)"
     }
 
@@ -410,6 +409,13 @@ final class ToastModel: ObservableObject {
 
 struct ToastView: View {
     @ObservedObject var model: ToastModel
+
+    // A new identity per toast resets the content's state, so the entrance animation replays every time.
+    var body: some View { ToastContent(model: model).id(model.version) }
+}
+
+struct ToastContent: View {
+    @ObservedObject var model: ToastModel
     @State private var appeared = false
     private let maxShown = 6
 
@@ -435,7 +441,6 @@ struct ToastView: View {
                 .fixedSize()
         }
         .padding(.leading, 8).padding(.trailing, 14).padding(.vertical, 8)
-        .id(model.version)
         .onAppear { appeared = true }
     }
 
@@ -515,6 +520,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var keyMonitor: Any?
     private var panelHost: NSHostingView<PanelView>!
     private var panelAnimation = 0   // stops an old fade-out from hiding a panel that was just reopened
+    private var panelHiding = false  // true during the fade-out
     private var toastAnimation = 0
 
     private let toastModel = ToastModel()
@@ -563,7 +569,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.isReleasedWhenClosed = false
         window.contentView = requestor
         requestor.onReceive = { [weak self] items in self?.received(items) }
-
 
         setUpStatusItem()
         setUpPanel()
@@ -703,7 +708,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let settle = CAMediaTimingFunction(controlPoints: 0.2, 0.8, 0.2, 1)
 
     @objc private func togglePanel() {
-        if panel.isVisible { return hidePanel() }
+        // While it fades out it still counts as visible; a click then reopens it.
+        if panel.isVisible && !panelHiding { return hidePanel() }
         refreshDevices()
         model.showingSettings = false
         model.launchAtLogin = SMAppService.mainApp.status == .enabled
@@ -716,6 +722,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func showPanel() {
         panelAnimation += 1
+        panelHiding = false
         let final = panelFrame()
         panel.setFrame(final.offsetBy(dx: 0, dy: 6), display: false)
         panel.alphaValue = 0
@@ -732,7 +739,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func hidePanel() {
         removeMonitors()
-        guard panel.isVisible else { return }
+        guard panel.isVisible, !panelHiding else { return }
+        panelHiding = true
         panelAnimation += 1
         let animation = panelAnimation
         let frame = panel.frame
@@ -745,6 +753,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self, self.panelAnimation == animation else { return }
             self.panel.orderOut(nil)
             self.panel.alphaValue = 1
+            self.panelHiding = false
         })
     }
 
@@ -794,7 +803,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let cameraAction = NSSelectorFromString("importFromDevice:")
         var devices: [Device] = []
         var name: String?
-        var actions: [DeviceAction] = []
+        var actions: [Int] = []
         func flush() {
             if let name, !actions.isEmpty { devices.append(Device(id: name, actions: actions)) }
             name = nil
@@ -803,7 +812,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         for (index, item) in deviceMenu.items.enumerated() {
             if item.isSeparatorItem { flush(); continue }
             if item.action == cameraAction {
-                actions.append(DeviceAction(menuIndex: index, title: item.title))
+                actions.append(index)
             } else if !item.title.isEmpty {
                 flush()
                 name = item.title
@@ -819,7 +828,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hidePanel()
         captures = []
         captureFiles = []
-        model.thumbs = []
         multiMode = multi
         activeIndex = menuIndex
         sessionActive = true
@@ -835,13 +843,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let deviceMenu = importItem.submenu else { return endSession() }
         capturedSinceFire = false
         fireGeneration += 1
+        // Delayed steps check this, so one left over from an earlier fire or session does nothing.
+        let generation = fireGeneration
         NSApp.activate(ignoringOtherApps: true)
         window.center()
         window.makeKeyAndOrderFront(nil)
         window.makeFirstResponder(requestor)
         // Short wait so activation finishes before asking for the photo.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            guard let self, self.sessionActive else { return }
+            guard let self, self.sessionActive, self.fireGeneration == generation else { return }
             deviceMenu.update()
             guard self.activeIndex < deviceMenu.items.count,
                   deviceMenu.items[self.activeIndex].action == NSSelectorFromString("importFromDevice:") else {
@@ -849,7 +859,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 return self.endSession()
             }
             // This opens the "Take a photo with…" alert and only returns once it closes.
-            let generation = self.fireGeneration
             deviceMenu.performActionForItem(at: self.activeIndex)
             // If it closed without a photo, it was cancelled (on the iPhone or on the Mac).
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
@@ -863,9 +872,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func received(_ items: [Capture]) {
         guard sessionActive else { return }
         capturedSinceFire = true
-        // The folder is only cleared once the first new photo arrives, so cancelling a session
-        // keeps whatever is already on the clipboard working.
+        // The folder and the previews are only cleared once the first new photo arrives, so cancelling
+        // a session keeps whatever is already on the clipboard working and visible in the panel.
         if captures.isEmpty {
+            model.thumbs = []
             try? FileManager.default.removeItem(at: saveDir)
             try? FileManager.default.createDirectory(at: saveDir, withIntermediateDirectories: true)
         }
@@ -881,14 +891,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // If the panel is open it updates there; otherwise the toast shows.
         // In multiple mode each photo shows on its own, and the summary shows at the end.
         if !panel.isVisible, let last = model.thumbs.last {
-            let title = multiMode ? "Copied to clipboard: \(model.thumbs.count)" : "Copied to clipboard"
+            let title = multiMode ? "Copied to clipboard: \(captures.count)" : "Copied to clipboard"
             showToast([last], title: title, duration: multiMode ? 1.6 : 2.2)
         }
 
         if multiMode {
             // Wait for the previous alert to close, then open the camera again.
+            let generation = fireGeneration
             DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                guard let self, self.sessionActive else { return }
+                guard let self, self.sessionActive, self.fireGeneration == generation else { return }
                 self.fire()
             }
         } else {
@@ -903,10 +914,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         model.multiSessionActive = false
         window.orderOut(nil)
         updateBadge()
-        if endedMulti && !panel.isVisible && model.thumbs.count > 1 {
-            showToast(model.thumbs, title: "Copied to clipboard: \(model.thumbs.count)", duration: 3)
+        // Counts this session's photos: the previews may still be the ones from an earlier session.
+        if endedMulti && !panel.isVisible && captures.count > 1 {
+            showToast(model.thumbs, title: "Copied to clipboard: \(captures.count)", duration: 3)
         }
         toastAnchor = nil
+        // Everything is on the clipboard and on disk by now; don't keep the full photos in memory.
+        captures = []
+        captureFiles = []
     }
 
     private func updateBadge() {

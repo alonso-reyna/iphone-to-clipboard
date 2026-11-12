@@ -43,7 +43,7 @@ A camera icon appears in the menu bar. To keep it there after a restart, turn on
 
 ## Build from source
 
-You only need the Xcode Command Line Tools (`xcode-select --install`).
+You only need the Xcode Command Line Tools (`xcode-select --install`) with the macOS 26 SDK or later.
 
 ```bash
 git clone https://github.com/alonso-reyna/iphone-to-clipboard.git
@@ -51,7 +51,7 @@ cd iphone-to-clipboard
 ./build.sh
 ```
 
-`./build.sh` builds a universal app and installs it into `~/Applications`. `./build.sh --release` builds `build/iPhone-Photo.zip` instead.
+`./build.sh` builds a universal app, installs it into `~/Applications` and opens it. `./build.sh --release` builds `build/iPhone-Photo.zip` instead.
 
 The whole app is a single file, [`main.swift`](main.swift) (AppKit + SwiftUI, no dependencies).
 

@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Builds "iPhone Photo.app" (universal: Apple Silicon + Intel) into ./build.
 #
-#   ./build.sh            build and install into ~/Applications
+#   ./build.sh            build, install into ~/Applications and open it
 #   ./build.sh --release  build and create build/iPhone-Photo.zip (no install)
 set -e
 cd "$(dirname "$0")"
@@ -46,4 +46,5 @@ else
   mkdir -p "$HOME/Applications"
   cp -R "$APP" "$HOME/Applications/"
   echo "Installed: ~/Applications/iPhone Photo.app"
+  open "$HOME/Applications/iPhone Photo.app"
 fi
