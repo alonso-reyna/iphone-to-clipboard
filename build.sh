@@ -6,7 +6,7 @@
 set -e
 cd "$(dirname "$0")"
 
-VERSION="1.1"
+VERSION="1.2"
 APP="build/iPhone Photo.app"
 rm -rf build
 mkdir -p "$APP/Contents/MacOS"
