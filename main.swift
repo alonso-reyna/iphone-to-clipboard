@@ -603,6 +603,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panelHost = NSHostingView(rootView: PanelView(model: model))
         panel.contentView = glass(around: panelHost, radius: 20)
         panel.cornerRadius = 20
+        // Pays the one-time SwiftUI setup at launch instead of on the first click.
+        panelHost.layoutSubtreeIfNeeded()
 
         toastHost = NSHostingView(rootView: ToastView(model: toastModel))
         toastPanel.contentView = glass(around: toastHost, radius: 16)
@@ -712,7 +714,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if panel.isVisible && !panelHiding { return hidePanel() }
         refreshDevices()
         model.showingSettings = false
-        model.launchAtLogin = SMAppService.mainApp.status == .enabled
+        refreshLaunchAtLogin()
         // Compute the final size before showing it, so it never resizes while visible.
         panelHost.layoutSubtreeIfNeeded()
         let fitting = panelHost.fittingSize
@@ -971,6 +973,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let general = NSPasteboard.general
         general.clearContents()
         general.writeObjects(items)
+    }
+
+    // Reading the status is a round trip to a system service (about 20 ms), so it stays off the
+    // main thread and never delays the panel.
+    private func refreshLaunchAtLogin() {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let on = SMAppService.mainApp.status == .enabled
+            DispatchQueue.main.async { self?.model.launchAtLogin = on }
+        }
     }
 
     private func setLaunchAtLogin(_ on: Bool) {
